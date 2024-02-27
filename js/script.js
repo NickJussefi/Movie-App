@@ -1,6 +1,15 @@
 // Set a variable to know at which page we are
 
-const globalState = window.location.pathname;
+const global = {
+    currentPage: window.location.pathname,
+  search: {
+    term: '',
+    type: '',
+    page: 1,
+    totalPages: 1,
+    totalResults: 0,
+  },
+}
 
 
 // Fetch the data from TMDB API
@@ -12,7 +21,7 @@ const moviesShowsLink = document.querySelectorAll('.nav-link');
 function highlightAction () {
     moviesShowsLink.forEach((link) => {
         
-        if(globalState === link.getAttribute('href')) {
+        if(global.currentPage === link.getAttribute('href')) {
             link.style.color = "#FFFF66";
             link.style.fontWeight = "700";
         }
@@ -273,72 +282,200 @@ async function displaySwiper(){
     })
 }
 
-function searchtype (e) {
-    e.preventDefault();
-    
-    
-    
-}
-    
-    
-async function showMoviesAndShows() {
-
-    const radioButtons = document.querySelectorAll('input[type="radio"]');
-    const searched = document.getElementById('search-term');
-    const searchedTerm = searched.value;
-    const movies = await fetchApiData('movie/popular');
-    const shows = await fetchApiData('tv/popular');
-    
-    radioButtons.forEach((button) => {
-        if(button.id === "movie") {
+function displaySearchResults(results) {
+    // Clear previous results
+    document.querySelector('#search-results').innerHTML = '';
+    document.querySelector('#search-results-heading').innerHTML = '';
+    document.querySelector('#pagination').innerHTML = '';
   
-            console.log(searchedTerm);
-            const searchedMovies = movies.filter((movie) => {
-                movie.title.includes(searchedTerm);
-                console.log(movie.title.includes(searchedTerm));
-            })
-            
-            searchedMovies.forEach((searchedMovie) => {
-                
-                console.log(searchedMovie);
-                
-                const searchDiv = document.createElement('div');
-                searchDiv.innerHTML = `
-                <div class="card">
-                <a href="movie-details.html?${searchedMovie.id}">
-                ${searchedMovie.poster_path ?
-                    `<img
-                    src="https://image.tmdb.org/t/p/w500${searchedMovie.poster_path}"
-                    class="card-img-top"
-                    alt="${searchedMovie.title}"/>` : 
-                    `<img
-                    src="images/no-image.jpg"
-                    class="card-img-top"
-                    alt="Movie Title"
-                    />
-                    `
-            }
+    results.forEach((result) => {
+      const div = document.createElement('div');
+      div.classList.add('card');
+      div.innerHTML = `
+            <a href="${global.search.type}-details.html?id=${result.id}">
+              ${
+                result.poster_path
+                  ? `<img
+                src="https://image.tmdb.org/t/p/w500${result.poster_path}"
+                class="card-img-top"
+                alt="${
+                  global.search.type === 'movie' ? result.title : result.name
+                }"
+              />`
+                  : `<img
+              src="../images/no-image.jpg"
+              class="card-img-top"
+               alt="${
+                 global.search.type === 'movie' ? result.title : result.name
+               }"
+            />`
+              }
             </a>
             <div class="card-body">
-            <h5 class="card-title">${searchedMovie.title}</h5>
-                    <p class="card-text">
-                    <small class="text-muted">Release: ${searchedMovie.release_date}</small>
-                    </p>
-                </div>
-                </div>
-                `;
-                document.querySelector('#search-results').appendChild(searchDiv);
-            } )
-        }
+              <h5 class="card-title">${
+                global.search.type === 'movie' ? result.title : result.name
+              }</h5>
+              <p class="card-text">
+                <small class="text-muted">Release: ${
+                  global.search.type === 'movie'
+                    ? result.release_date
+                    : result.first_air_date
+                }</small>
+              </p>
+            </div>
+          `;
+  
+      document.querySelector('#search-results-heading').innerHTML = `
+                <h2>${results.length} of ${global.search.totalResults} Results for ${global.search.term}</h2>
+      `;
+  
+      document.querySelector('#search-results').appendChild(div);
+    });
+  
+    displayPagination();
+  }
 
-        else{
-            showshows();
-        }
-    })
+  function displayPagination() {
+    const div = document.createElement('div');
+    div.classList.add('pagination');
+    div.innerHTML = `
+    <button class="btn btn-primary" id="prev">Prev</button>
+    <button class="btn btn-primary" id="next">Next</button>
+    <div class="page-counter">Page ${global.search.page} of ${global.search.totalPages}</div>
+    `;
+  
+    document.querySelector('#pagination').appendChild(div);
+  
+    // Disable prev button if on first page
+    if (global.search.page === 1) {
+      document.querySelector('#prev').disabled = true;
+    }
+  
+    // Disable next button if on last page
+    if (global.search.page === global.search.totalPages) {
+      document.querySelector('#next').disabled = true;
+    }
+  
+    // Next page
+    document.querySelector('#next').addEventListener('click', async () => {
+      global.search.page++;
+      const { results, total_pages } = await searchAPIData();
+      displaySearchResults(results);
+    });
+  
+    // Prev page
+    document.querySelector('#prev').addEventListener('click', async () => {
+      global.search.page--;
+      const { results, total_pages } = await searchAPIData();
+      displaySearchResults(results);
+    });
+  }
+
+// Search Movies/Shows
+async function search() {
+    const queryString = window.location.search;
+    const urlParams = new URLSearchParams(queryString);
+  
+    global.search.type = urlParams.get('type');
+    global.search.term = urlParams.get('search-term');
+  
+    if (global.search.term !== '' && global.search.term !== null) {
+      const { results, total_pages, page, total_results } = await searchAPIData();
+  
+      global.search.page = page;
+      global.search.totalPages = total_pages;
+      global.search.totalResults = total_results;
+  
+      if (results.length === 0) {
+        showAlert('No results found');
+        return;
+      }
+  
+      displaySearchResults(results);
+  
+      document.querySelector('#search-term').value = '';
+    } else {
+      showAlert('Please enter a search term');
+    }
+  }
+
+  async function searchAPIData() {
+    const API_KEY = '93a02209f529ec1f825e904cc4900210';
+    const API_URL = "https://api.themoviedb.org/3/";
+  
+    showSpinner();
+  
+    const response = await fetch(
+      `${API_URL}search/${global.search.type}?api_key=${API_KEY}&language=en-US&query=${global.search.term}&page=${global.search.page}`
+    );
+  
+    const data = await response.json();
+    console.log(data);
+  
+    hideSpinner();
+  
+    return data;
+  }
+    
+    
+// async function showMoviesAndShows() {
+
+//     const radioButtons = document.querySelectorAll('input[type="radio"]');
+//     const searched = document.getElementById('search-term');
+//     const searchedTerm = searched.value;
+//     const movies = await fetchApiData('movie/popular');
+//     const shows = await fetchApiData('tv/popular');
+    
+//     radioButtons.forEach((button) => {
+//         if(button.id === "movie") {
+  
+//             console.log(searchedTerm);
+//             const searchedMovies = movies.filter((movie) => {
+//                 movie.title.includes(searchedTerm);
+//                 console.log(movie.title.includes(searchedTerm));
+//             })
+            
+//             searchedMovies.forEach((searchedMovie) => {
+                
+//                 console.log(searchedMovie);
+                
+//                 const searchDiv = document.createElement('div');
+//                 searchDiv.innerHTML = `
+//                 <div class="card">
+//                 <a href="movie-details.html?${searchedMovie.id}">
+//                 ${searchedMovie.poster_path ?
+//                     `<img
+//                     src="https://image.tmdb.org/t/p/w500${searchedMovie.poster_path}"
+//                     class="card-img-top"
+//                     alt="${searchedMovie.title}"/>` : 
+//                     `<img
+//                     src="images/no-image.jpg"
+//                     class="card-img-top"
+//                     alt="Movie Title"
+//                     />
+//                     `
+//             }
+//             </a>
+//             <div class="card-body">
+//             <h5 class="card-title">${searchedMovie.title}</h5>
+//                     <p class="card-text">
+//                     <small class="text-muted">Release: ${searchedMovie.release_date}</small>
+//                     </p>
+//                 </div>
+//                 </div>
+//                 `;
+//                 document.querySelector('#search-results').appendChild(searchDiv);
+//             } )
+//         }
+
+//         else{
+//             showshows();
+//         }
+//     })
 
 
 
-} 
+// } 
 
 async function showshows(){
 
@@ -360,12 +497,12 @@ function hideSpinner () {
 
 // Router
 
-switch (globalState) {
+switch (global.currentPage) {
     case '/':
     case '/index.html':
         displayMovies();
         displaySwiper();
-        showMoviesAndShows();
+        // showMoviesAndShows();
         break;
     case '/shows.html':
         displayShows();
@@ -376,6 +513,6 @@ switch (globalState) {
     case '/tv-details.html':
         showsDetailes();
     case '/search.html':
-        showMoviesAndShows();
+        search();
         break;
 }
